@@ -1,11 +1,11 @@
 %{!?python_sitelib: %define python_sitelib %(%{__python} -c "import distutils.sysconfig as d; print d.get_python_lib()")}
 
 %define debug_package 	     %{nil}
-%define config_release       6
+%define config_release       7
 
 Summary: Tools for building live CDs
 Name: livecd-tools
-Version: 13.3
+Version: 13.4
 Release: %{config_release}.sl6
 Epoch: 1
 License: GPLv2
@@ -105,6 +105,20 @@ rm -rf $RPM_BUILD_ROOT
 %{python_sitelib}/imgcreate/*.pyc
 
 %changelog
+* Fri Dec 23 2011 Urs Beyerle <urs.beyerle@env.ethz.ch> - 13.4-7
+- build first version for SL62
+
+* Tue Aug 23 2011 Brian C. Lane <bcl@redhat.com> - 13.4
+- Version 13.4 (bcl)
+- Use copyFile on the iso (bcl)
+- Add EFI support to netboot and DVD iso (bcl)
+- Use rsync to copy if available (bcl)
+- Support /EFI/BOOT or /EFI/boot (#688258) (bcl)
+- gptmbr can be written directly to the mbr (bcl)
+- Ensure previous filesystems are wiped when formatting (#712553) (bcl)
+- Turn on the legacy_boot flag for EFI (#680563) (bcl)
+- Copy updates and product image files (bcl)
+
 * Mon Aug 01 2011 Urs Beyerle <urs.beyerle@env.ethz.ch> - 13.3-6
 - Move kickstart files from doc dir to /usr/share/livecd-tools
 

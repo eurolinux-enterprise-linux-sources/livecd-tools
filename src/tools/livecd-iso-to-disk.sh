@@ -87,15 +87,15 @@ resetMBR() {
     # if efi, we need to use the hybrid MBR
     if [ -n "$efi" ];then
         if [ -f /usr/lib/syslinux/gptmbr.bin ]; then
-            gptmbr='/usr/lib/syslinux/gptmbr.bin'
+            cat /usr/lib/syslinux/gptmbr.bin > $device
         elif [ -f /usr/share/syslinux/gptmbr.bin ]; then
-            gptmbr='/usr/share/syslinux/gptmbr.bin'
+            cat /usr/share/syslinux/gptmbr.bin > $device
         else
             echo "Could not find gptmbr.bin (syslinux)"
             exitclean
         fi
-        # our magic number is LBA-2, offset 16 - (512+512+16)/$bs
-        dd if=$device bs=16 skip=65 count=1 | cat $gptmbr - > $device
+        # Make it bootable on EFI and BIOS
+        parted -s $device set $partnum legacy_boot on
     else
         if [ -f /usr/lib/syslinux/mbr.bin ]; then
             cat /usr/lib/syslinux/mbr.bin > $device
@@ -173,6 +173,7 @@ createGPTLayout() {
     echo "Press Enter to continue or ctrl-c to abort"
     read
     umount ${device}* &> /dev/null
+    wipefs -a ${device}
     /sbin/parted --script $device mklabel gpt
     partinfo=$(LC_ALL=C /sbin/parted --script -m $device "unit b print" |grep ^$device:)
     size=$(echo $partinfo |cut -d : -f 2 |sed -e 's/B$//')
@@ -196,6 +197,7 @@ createMSDOSLayout() {
     echo "Press Enter to continue or ctrl-c to abort"
     read
     umount ${device}* &> /dev/null
+    wipefs -a ${device}
     /sbin/parted --script $device mklabel msdos
     partinfo=$(LC_ALL=C /sbin/parted --script -m $device "unit b print" |grep ^$device:)
     size=$(echo $partinfo |cut -d : -f 2 |sed -e 's/B$//')
@@ -223,6 +225,7 @@ createEXTFSLayout() {
     echo "Press Enter to continue or ctrl-c to abort"
     read
     umount ${device}* &> /dev/null
+    wipefs -a ${device}
     /sbin/parted --script $device mklabel msdos
     partinfo=$(LC_ALL=C /sbin/parted --script -m $device "unit b print" |grep ^$device:)
     size=$(echo $partinfo |cut -d : -f 2 |sed -e 's/B$//')
@@ -381,6 +384,10 @@ cp_p() {
 }
 
 copyFile() {
+        if [ -x /usr/bin/rsync ]; then
+            rsync -P "$1" "$2"
+            return
+        fi
 	if [ -x /usr/bin/gvfs-copy ]; then
 	    gvfs-copy -p "$1" "$2"
 	    return
@@ -391,6 +398,8 @@ copyFile() {
 	fi
 	cp "$1" "$2"
 }
+
+shopt -s extglob
 
 cryptedhome=1
 keephome=1
@@ -594,9 +603,15 @@ if [ -f "$USBMNT/$LIVEOS/$HOMEFILE" -a -n "$keephome" -a "$homesizemb" -gt 0 ]; 
     exitclean
 fi
 
-if [ -n "$efi" -a ! -d $CDMNT/EFI/boot ]; then
-    echo "ERROR: This live image does not support EFI booting"
-    exitclean
+if [ -n "$efi" ]; then
+    if [ -d $CDMNT/EFI/BOOT ]; then
+        EFI_BOOT="/EFI/BOOT"
+    elif [ -d $CDMNT/EFI/boot ]; then
+        EFI_BOOT="/EFI/boot"
+    else
+        echo "ERROR: This live image does not support EFI booting"
+        exitclean
+    fi
 fi
 
 # let's try to make sure there's enough room on the stick
@@ -695,7 +710,7 @@ fi
 
 # Bootloader is always reconfigured, so keep these out of the if skipcopy stuff.
 [ ! -d $USBMNT/$SYSLINUXPATH ] && mkdir -p $USBMNT/$SYSLINUXPATH
-[ -n "$efi" -a ! -d $USBMNT/EFI/boot ] && mkdir -p $USBMNT/EFI/boot
+[ -n "$efi" -a ! -d $USBMNT$EFI_BOOT ] && mkdir -p $USBMNT$EFI_BOOT
 
 # Live image copy
 set -o pipefail
@@ -724,10 +739,14 @@ if [ \( "$isotype" = "installer" -o "$isotype" = "netinst" \) ]; then
     echo "Copying DVD image to USB stick"
     mkdir -p $USBMNT/images/
     if [ "$imgtype" = "install" ]; then
-        copyFile $CDMNT/images/install.img $USBMNT/images/install.img || exitclean
+        for img in install.img updates.img product.img; do
+            if [ -e $CDMNT/images/$img ]; then
+                copyFile $CDMNT/images/$img $USBMNT/images/$img || exitclean
+            fi
+        done
     fi
     if [ "$isotype" = "installer" -a -z "$skipcopy" ]; then
-        cp $ISO $USBMNT/
+        copyFile $ISO $USBMNT/
     fi
     sync
 fi
@@ -736,12 +755,16 @@ cp $CDMNT/isolinux/* $USBMNT/$SYSLINUXPATH
 BOOTCONFIG=$USBMNT/$SYSLINUXPATH/isolinux.cfg
 # Set this to nothing so sed doesn't care
 BOOTCONFIG_EFI=
-if [ -n "$efi" ];then
-    cp $CDMNT/EFI/boot/* $USBMNT/EFI/boot
+if [ -n "$efi" ]; then
+    cp $CDMNT$EFI_BOOT/* $USBMNT$EFI_BOOT
+
+    # FIXME
+    # There is a problem here. On older LiveCD's the files are boot?*.conf
+    # They really should be renamed to BOOT?*.conf
 
     # this is a little ugly, but it gets the "interesting" named config file
-    BOOTCONFIG_EFI=$USBMNT/EFI/boot/boot?*.conf
-    rm -f $USBMNT/EFI/boot/grub.conf
+    BOOTCONFIG_EFI=$USBMNT$EFI_BOOT/+(BOOT|boot)?*.conf
+    rm -f $USBMNT$EFI_BOOT/grub.conf
 fi
 
 echo "Updating boot config file"
@@ -755,17 +778,25 @@ if [ "$LIVEOS" != "LiveOS" ]; then sed -i -e "s;liveimg;liveimg live_dir=$LIVEOS
 
 # DVD Installer
 if [ "$isotype" = "installer" ]; then
-    sed -i -e "s;initrd=initrd.img;initrd=initrd.img ${LANG:+LANG=$LANG} repo=hd:$USBLABEL:/;g" $BOOTCONFIG $BOOTCONFIG_EFI
-    sed -i -e "s;stage2=\S*;;g" $BOOTCONFIG $BOOTCONFIG_EFI
+    sed -i -e "s;initrd=initrd.img;initrd=initrd.img ${LANG:+LANG=$LANG} repo=hd:$USBLABEL:/;g" $BOOTCONFIG
+    sed -i -e "s;stage2=\S*;;g" $BOOTCONFIG
+    if [ -n "$efi" ]; then
+        # Images are in $SYSLINUXPATH now
+        sed -i -e "s;/images/pxeboot/;/$SYSLINUXPATH/;g" -e "s;vmlinuz;vmlinuz ${LANG:+LANG=$LANG} repo=hd:$USBLABEL:/;g" $BOOTCONFIG_EFI
+    fi
 fi
 
 # DVD Installer for netinst
 if [ "$isotype" = "netinst" ]; then
     if [ "$imgtype" = "install" ]; then
-        sed -i -e "s;stage2=\S*;stage2=hd:$USBLABEL:/images/install.img;g" $BOOTCONFIG $BOOTCONFIG_EFI
+        sed -i -e "s;stage2=\S*;stage2=hd:$USBLABEL:/images/install.img;g" $BOOTCONFIG
     else
         # The initrd has everything, so no stage2
-        sed -i -e "s;stage2=\S*;;g" $BOOTCONFIG $BOOTCONFIG_EFI
+        sed -i -e "s;stage2=\S*;;g" $BOOTCONFIG
+    fi
+    if [ -n "$efi" ]; then
+        # Images are in $SYSLINUXPATH now
+        sed -ie "s;/images/pxeboot/;/$SYSLINUXPATH/;g" $BOOTCONFIG_EFI
     fi
 fi
 
@@ -899,7 +930,9 @@ if [ -z "$multi" ]; then
     echo "Installing boot loader"
     if [ -n "$efi" ]; then
         # replace the ia32 hack
-        if [ -f "$USBMNT/EFI/boot/boot.conf" ]; then cp -f $USBMNT/EFI/boot/bootia32.conf $USBMNT/EFI/boot/boot.conf ; fi
+        if [ -f "$USBMNT$EFI_BOOT/boot.conf" ]; then
+            cp -f $USBMNT$EFI_BOOT/BOOTia32.conf $USBMNT$EFI_BOOT/BOOT.conf
+        fi
     fi
 
     # this is a bit of a kludge, but syslinux doesn't guarantee the API for its com32 modules :/
