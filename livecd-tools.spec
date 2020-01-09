@@ -1,7 +1,7 @@
 %{!?python_sitelib: %define python_sitelib %(%{__python} -c "import distutils.sysconfig as d; print d.get_python_lib()")}
 
 %define debug_package 	     %{nil}
-%define config_release       7
+%define config_release       9
 
 Summary: Tools for building live CDs
 Name: livecd-tools
@@ -105,6 +105,9 @@ rm -rf $RPM_BUILD_ROOT
 %{python_sitelib}/imgcreate/*.pyc
 
 %changelog
+* Fri Feb 13 2012 Urs Beyerle <urs.beyerle@env.ethz.ch> - 13.4-9
+- Update ks files to SL62 LiveCD version
+
 * Fri Dec 23 2011 Urs Beyerle <urs.beyerle@env.ethz.ch> - 13.4-7
 - build first version for SL62
 
