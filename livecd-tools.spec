@@ -1,12 +1,12 @@
 %{!?python_sitelib: %define python_sitelib %(%{__python} -c "import distutils.sysconfig as d; print d.get_python_lib()")}
 
 %define debug_package 	     %{nil}
-%define config_release       4
+%define config_release       6
 
 Summary: Tools for building live CDs
 Name: livecd-tools
 Version: 13.3
-Release: %{config_release}%{?dist}
+Release: %{config_release}.sl6
 Epoch: 1
 License: GPLv2
 Group: System Environment/Base
@@ -40,6 +40,9 @@ Tools for generating live CDs on Fedora based systems including
 derived distributions such as RHEL, CentOS, Scientific Linux and 
 others. 
 See http://fedoraproject.org/wiki/FedoraLiveCD for more details.
+Kickstart files for Scientific Linux LiveMiniCD, LiveCD and LiveDVD 
+can be found under /usr/share/%{name}.
+
 
 %package -n python-imgcreate
 Summary: Python modules for building system images
@@ -74,7 +77,8 @@ make install DESTDIR=$RPM_BUILD_ROOT
 ### install SL config files
 %{__tar} xfj %{SOURCE1}
 cd livecd-config-%{config_release} 
-cp -a *.ks $RPM_BUILD_ROOT/%{_defaultdocdir}/%{name}-%{version}/
+mkdir -p $RPM_BUILD_ROOT/usr/share/%{name}
+cp -a *.ks $RPM_BUILD_ROOT/usr/share/%{name}/
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -83,7 +87,7 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 %doc AUTHORS COPYING README HACKING
 %doc config/livecd-fedora-minimal.ks
-%doc livecd-config-%{config_release}/*.ks
+/usr/share/%{name}/*.ks
 %{_mandir}/man*/*
 %{_bindir}/livecd-creator
 %{_bindir}/livecd-iso-to-disk
@@ -101,6 +105,12 @@ rm -rf $RPM_BUILD_ROOT
 %{python_sitelib}/imgcreate/*.pyc
 
 %changelog
+* Mon Aug 01 2011 Urs Beyerle <urs.beyerle@env.ethz.ch> - 13.3-6
+- Move kickstart files from doc dir to /usr/share/livecd-tools
+
+* Thu Jul 28 2011 Urs Beyerle <urs.beyerle@env.ethz.ch> - 13.3-5
+- Update ks files to SL61 LiveCD version
+
 * Tue Jul 05 2011 Urs Beyerle <urs.beyerle@env.ethz.ch> - 13.3-4
 - Update to 13.3 (equal to EPEL)
 
